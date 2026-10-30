@@ -1,0 +1,532 @@
+import io
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from PIL import Image as PILImage
+from pypdf import PdfWriter
+
+from app.ai import provider as ai
+from app.ai.schemas import GradedItem, GradeResult
+from app.services import jobs
+from app.services.assignments import to_scale, week_start_utc
+from tests.conftest import make_student, make_teacher
+
+
+def pdf_bytes(pages: int) -> bytes:
+    w = PdfWriter()
+    for _ in range(pages):
+        w.add_blank_page(width=595, height=842)
+    out = io.BytesIO()
+    w.write(out)
+    return out.getvalue()
+
+
+def png_bytes(color=(200, 30, 30)) -> bytes:
+    out = io.BytesIO()
+    PILImage.new("RGB", (40, 40), color).save(out, format="PNG")
+    return out.getvalue()
+
+
+def due(hours=24) -> str:
+    return (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
+
+
+async def _setup(client, n_students=1):
+    t = await make_teacher(client)
+    g = (await client.post("/api/v1/groups", json={"name": "7-B", "subject": "math"}, headers=t)).json()
+    students = []
+    for _ in range(n_students):
+        s = await make_student(client)
+        await client.post("/api/v1/memberships", json={"code": g["join_code"], "password": g["join_password"]}, headers=s)
+        students.append(s)
+    await client.post(f"/api/v1/groups/{g['id']}/members/approve-all", headers=t)
+    return t, g, students
+
+
+async def _book(client, t, pages=40, offset=5):
+    r = await client.post(
+        "/api/v1/books",
+        headers=t,
+        data={"title": "Algebra 7", "page_offset": str(offset)},
+        files={"file": ("algebra.pdf", pdf_bytes(pages), "application/pdf")},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _book_assignment(client, t, g, **extra):
+    book = await _book(client, t)
+    data = {
+        "group_id": g["id"], "title": "34-37 betlar", "source_type": "book", "book_id": book["id"],
+        "page_from": "34", "page_to": "35", "problems": "56-60", "due_at": due(), **extra,
+    }
+    r = await client.post("/api/v1/assignments", headers=t, data=data)
+    assert r.status_code == 201, r.text
+    await jobs.drain()
+    return (await client.get(f"/api/v1/assignments/{r.json()['id']}", headers=t)).json()
+
+
+# ---------------------------------------------------------------- Kitob va tayyorlash
+
+
+async def test_book_upload_and_page_offset(client):
+    t, _, _ = await _setup(client, 0)
+    book = await _book(client, t, pages=40, offset=5)
+    assert book["page_count"] == 40 and book["last_printed_page"] == 36
+
+    r = await client.post("/api/v1/books", headers=t, data={"title": "Soxta"},
+                          files={"file": ("x.pdf", b"not a pdf", "application/pdf")})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "FILE_TYPE_INVALID"
+
+
+async def test_book_assignment_prepared_then_published(client):
+    t, g, _ = await _setup(client, 0)
+    a = await _book_assignment(client, t, g)
+    assert a["status"] == "review"
+    assert [i["number"] for i in a["items"]] == ["56", "57", "58", "59", "60"]
+
+    # Ustoz bitta misolni tuzatadi va o'chiradi
+    items = a["items"][:4]
+    items[0]["text"] = "2x + 3 = 11"
+    r = await client.put(f"/api/v1/assignments/{a['id']}/content", headers=t, json={"items": items})
+    assert r.status_code == 200 and len(r.json()["items"]) == 4
+
+    r = await client.post(f"/api/v1/assignments/{a['id']}/publish", headers=t)
+    assert r.json()["status"] == "published" and r.json()["stats"]["members"] == 0
+
+
+async def test_page_range_outside_book(client):
+    t, g, _ = await _setup(client, 0)
+    book = await _book(client, t, pages=40, offset=5)  # bosma betlar 1..36
+    r = await client.post("/api/v1/assignments", headers=t, data={
+        "group_id": g["id"], "title": "Sinov vazifa", "source_type": "book", "book_id": book["id"],
+        "page_from": "35", "page_to": "37", "due_at": due()})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "PAGES_OUT_OF_RANGE", r.text
+
+
+async def test_images_and_text_sources(client):
+    t, g, _ = await _setup(client, 0)
+    r = await client.post("/api/v1/assignments", headers=t,
+                          data={"group_id": g["id"], "title": "Rasmdagi misollar", "source_type": "images", "due_at": due()},
+                          files=[("images", ("a.png", png_bytes(), "image/png"))])
+    assert r.status_code == 201, r.text
+    assert len(r.json()["image_urls"]) == 1
+
+    r = await client.post("/api/v1/assignments", headers=t, data={
+        "group_id": g["id"], "title": "Krossvord", "source_type": "text", "due_at": due(),
+        "instructions": "Hayvonlar mavzusida 15 so'zli krossvord tuzib keling"})
+    assert r.status_code == 201
+    await jobs.drain()
+    a = (await client.get(f"/api/v1/assignments/{r.json()['id']}", headers=t)).json()
+    assert a["status"] == "review" and sum(c["weight"] for c in a["rubric"]) == 100
+
+
+async def test_fake_jpg_rejected(client):
+    t, g, _ = await _setup(client, 0)
+    r = await client.post("/api/v1/assignments", headers=t,
+                          data={"group_id": g["id"], "title": "Sinov vazifa", "source_type": "images", "due_at": due()},
+                          files=[("images", ("virus.jpg", b"MZ\x90\x00 not an image", "image/jpeg"))])
+    assert r.status_code == 422 and r.json()["error"]["code"] == "FILE_TYPE_INVALID"
+
+
+async def test_weekly_limit_when_plan_has_one(client):
+    from sqlalchemy import update
+
+    from app.db import session as db_session
+    from app.models import Plan
+
+    # Hozirgi tariflarda haftalik limit yo'q; admin yoqsa ishlashini tekshiramiz
+    async with db_session.get_sessionmaker()() as db:
+        await db.execute(update(Plan).where(Plan.code == "trial").values(max_assignments_per_week=4))
+        await db.commit()
+    t, g, _ = await _setup(client, 0)
+    body = {"group_id": g["id"], "source_type": "text", "due_at": due(), "instructions": "Insho yozing: Mening oilam"}
+    for i in range(4):
+        assert (await client.post("/api/v1/assignments", headers=t, data={**body, "title": f"V{i}"})).status_code == 201
+    r = await client.post("/api/v1/assignments", headers=t, data={**body, "title": "V5"})
+    assert r.status_code == 403 and r.json()["error"]["code"] == "PLAN_ASSIGNMENT_LIMIT"
+    await jobs.drain()
+
+
+async def test_ai_failure_marks_failed_and_teacher_can_fill_manually(client, monkeypatch):
+    t, g, _ = await _setup(client, 0)
+
+    async def boom(*a, **k):
+        raise ai.AiError("AI xizmatiga ulanib bo'lmadi")
+
+    monkeypatch.setattr(ai.get_provider(), "extract_from_pdf", boom)
+    a = await _book_assignment(client, t, g)
+    assert a["status"] == "failed" and "ulanib" in a["prepare_error"]
+
+    r = await client.put(f"/api/v1/assignments/{a['id']}/content", headers=t,
+                         json={"items": [{"number": "1", "text": "2+2", "answer": "4"}]})
+    assert r.json()["status"] == "review"
+    assert (await client.post(f"/api/v1/assignments/{a['id']}/publish", headers=t)).status_code == 200
+
+
+# ---------------------------------------------------------------- Topshirish va baholash
+
+
+async def _published(client, t, g, **extra):
+    a = await _book_assignment(client, t, g, **extra)
+    await client.post(f"/api/v1/assignments/{a['id']}/publish", headers=t)
+    return a
+
+
+async def _submit(client, s, a, color=(10, 120, 200)):
+    return await client.post(f"/api/v1/student/assignments/{a['id']}/submission", headers=s,
+                             files=[("files", ("work.png", png_bytes(color), "image/png"))])
+
+
+async def test_student_submits_and_gets_grade(client):
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+
+    lst = (await client.get("/api/v1/student/assignments", headers=s)).json()
+    assert len(lst) == 1 and lst[0]["submission"] is None
+    assert all("answer" not in i for i in lst[0]["items"])  # javoblar kaliti o'quvchiga berilmaydi
+
+    r = await _submit(client, s, a)
+    assert r.status_code == 201 and r.json()["submission"]["status"] == "grading"
+    await jobs.drain()
+
+    sub = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s)).json()["submission"]
+    assert sub["status"] == "graded"
+    assert sub["final_score"] == 8.0  # fake: 85% -> guruh 10 ballik (ustoz onboardingda tanlagan) -> 8
+    assert sub["feedback_student"] and sub["note_teacher"] is None  # ustoz izohi o'quvchiga ko'rinmaydi
+    assert len(sub["ai_items"]) == 5
+
+    teacher_view = (await client.get(f"/api/v1/assignments/{a['id']}/submissions", headers=t)).json()
+    assert teacher_view[0]["note_teacher"] and teacher_view[0]["ai_confidence"] == 0.9
+
+
+async def test_low_confidence_goes_to_teacher_first(client, monkeypatch):
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+
+    async def unsure(ctx, work, text):
+        return GradeResult(matches_assignment=True, items=[GradedItem(number="56", verdict="partial", comment="")],
+                           score_percent=60, feedback_student="...", note_teacher="Rasm xira", confidence=0.4), ai.Usage("fake", "fake")
+
+    monkeypatch.setattr(ai.get_provider(), "grade", unsure)
+    await _submit(client, s, a)
+    await jobs.drain()
+
+    sub = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s)).json()["submission"]
+    assert sub["status"] == "needs_review" and sub["final_score"] is None and sub["feedback_student"] is None
+
+    queue = (await client.get("/api/v1/teachers/me/review-queue", headers=t)).json()
+    assert len(queue) == 1
+    r = await client.post(f"/api/v1/submissions/{queue[0]['id']}/review", headers=t, json={"score": 3, "comment": "Toza yozing"})
+    assert r.status_code == 200 and r.json()["final_score"] == 3
+
+    sub = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s)).json()["submission"]
+    assert sub["status"] == "graded" and sub["final_score"] == 3 and sub["teacher_comment"] == "Toza yozing"
+    assert (await client.get("/api/v1/teachers/me/review-queue", headers=t)).json() == []
+
+
+async def test_same_photo_from_two_students_flagged(client):
+    t, g, (s1, s2) = await _setup(client, 2)
+    a = await _published(client, t, g)
+    await _submit(client, s1, a, color=(1, 2, 3))
+    await jobs.drain()
+    await _submit(client, s2, a, color=(1, 2, 3))
+    await jobs.drain()
+    sub2 = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s2)).json()["submission"]
+    assert sub2["status"] == "needs_review"
+    queue = (await client.get("/api/v1/teachers/me/review-queue", headers=t)).json()
+    assert "aynan shu rasmni" in queue[0]["note_teacher"]
+
+
+async def test_non_member_cannot_see_or_submit(client):
+    t, g, _ = await _setup(client, 0)
+    a = await _published(client, t, g)
+    outsider = await make_student(client)
+    assert (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=outsider)).status_code == 404
+    assert (await _submit(client, outsider, a)).status_code == 404
+
+
+async def test_unpublished_hidden_from_students(client):
+    t, g, (s,) = await _setup(client, 1)
+    await _book_assignment(client, t, g)  # review holatida
+    assert (await client.get("/api/v1/student/assignments", headers=s)).json() == []
+
+
+async def test_resubmit_and_limits(client):
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    for attempt in range(1, 4):
+        r = await _submit(client, s, a, color=(attempt, 0, 0))
+        assert r.status_code == 201, r.text
+        assert r.json()["submission"]["attempt"] == attempt
+        await jobs.drain()
+    r = await _submit(client, s, a)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "RESUBMIT_LIMIT"
+
+
+async def test_media_links_are_signed(client):
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    await _submit(client, s, a)
+    await jobs.drain()
+    url = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s)).json()["submission"]["file_urls"][0]
+    path = url.split("://", 1)[1].split("/", 1)[1]
+    assert (await client.get("/" + path)).status_code == 200
+    assert (await client.get("/" + path.replace("sig=", "sig=0"))).status_code == 404
+    assert (await client.get("/" + path.split("?")[0] + "?exp=1&sig=x")).status_code == 404
+
+
+async def test_media_links_stable_and_served_by_nginx(client, monkeypatch):
+    from app.core.config import get_settings
+
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    await _submit(client, s, a)
+    await jobs.drain()
+    view = f"/api/v1/student/assignments/{a['id']}"
+    url1 = (await client.get(view, headers=s)).json()["submission"]["file_urls"][0]
+    url2 = (await client.get(view, headers=s)).json()["submission"]["file_urls"][0]
+    assert url1 == url2  # havola o'zgarmaydi: telefon keshidan foydalanadi
+
+    path = "/" + url1.split("://", 1)[1].split("/", 1)[1]
+    r = await client.get(path)
+    assert "immutable" in r.headers["cache-control"] and r.content
+
+    monkeypatch.setattr(get_settings(), "media_accel_prefix", "/_protected_media")
+    r = await client.get(path)
+    key = path.split("?")[0].removeprefix("/media/")
+    assert r.status_code == 200 and r.headers["x-accel-redirect"] == f"/_protected_media/{key}" and not r.content
+
+
+# ---------------------------------------------------------------- Yordamchilar
+
+
+@pytest.mark.parametrize(
+    ("percent", "scale", "expected"),
+    [(100, "5", 5), (86, "5", 5), (85, "5", 4), (71, "5", 4), (51, "5", 3), (50, "5", 2),
+     (85, "10", 8), (3, "10", 1), (84.6, "100", 85)],
+)
+def test_to_scale(percent, scale, expected):
+    assert to_scale(percent, scale) == expected
+
+
+def test_week_starts_monday_tashkent():
+    # Yakshanba 20:00 UTC = dushanba 01:00 Toshkent -> hafta shu dushanbadan boshlanadi
+    sunday_evening = datetime(2026, 9, 20, 20, 0, tzinfo=UTC)
+    assert week_start_utc(sunday_evening) == datetime(2026, 9, 20, 19, 0, tzinfo=UTC)
+
+
+async def test_teacher_dashboard(client):
+    t, g, (s1, s2) = await _setup(client, 2)
+    empty = (await client.get("/api/v1/teachers/me/dashboard", headers=t)).json()
+    assert empty["stats"]["students"] == 2 and empty["stats"]["open_assignments"] == 0
+    assert len(empty["activity"]) == 7 and empty["stats"]["avg_percent_week"] is None
+
+    a = await _published(client, t, g)
+    await _submit(client, s1, a)
+    await jobs.drain()
+
+    d = (await client.get("/api/v1/teachers/me/dashboard", headers=t)).json()
+    assert d["stats"]["open_assignments"] == 1 and d["stats"]["graded_this_week"] == 1
+    assert d["stats"]["avg_percent_week"] == 80.0  # 10 ballik: 85% -> 8 -> 80%
+    assert d["upcoming"][0]["submitted"] == 1 and d["upcoming"][0]["members"] == 2
+    assert d["recent"][0]["final_score"] == 8.0
+    assert sum(x["count"] for x in d["activity"]) == 1
+
+    # Boshqa o'qituvchi bu ma'lumotlarni ko'rmaydi
+    other = await make_teacher(client)
+    assert (await client.get("/api/v1/teachers/me/dashboard", headers=other)).json()["stats"]["students"] == 0
+
+
+# ---------------------------------------------------------------- AI navbati (limit, bir nechta jarayon)
+
+
+@pytest.fixture
+def fast_retry(monkeypatch):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "ai_retry_base_seconds", 0)
+
+
+async def test_rate_limited_grading_waits_in_queue_then_succeeds(client, monkeypatch, fast_retry):
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    fake = ai.get_provider()
+    real_grade = fake.grade
+    calls = []
+
+    async def limited_twice(ctx, work, text):
+        calls.append(1)
+        if len(calls) <= 2:
+            raise ai.AiError("AI limiti tugadi", retryable=True)
+        return await real_grade(ctx, work, text)
+
+    monkeypatch.setattr(fake, "grade", limited_twice)
+    await _submit(client, s, a)
+    await jobs.drain()
+    sub = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s)).json()["submission"]
+    assert len(calls) == 3 and sub["status"] == "graded"  # ustozga "xato" bo'lib tushmadi
+
+
+async def test_grading_fails_after_max_attempts(client, monkeypatch, fast_retry):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "ai_max_attempts", 3)
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    calls = []
+
+    async def always_limited(ctx, work, text):
+        calls.append(1)
+        raise ai.AiError("AI limiti tugadi", retryable=True)
+
+    monkeypatch.setattr(ai.get_provider(), "grade", always_limited)
+    await _submit(client, s, a)
+    await jobs.drain()
+    sub = (await client.get(f"/api/v1/submissions/{(await client.get(f'/api/v1/assignments/{a['id']}/submissions', headers=t)).json()[0]['id']}", headers=t)).json()
+    assert len(calls) == 3 and sub["status"] == "failed" and "qo'lda" in sub["note_teacher"]
+
+
+async def test_same_job_runs_once_even_if_started_twice(client, monkeypatch):
+    import asyncio
+    import uuid
+
+    from app.services.assignments import grade_submission
+
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    fake = ai.get_provider()
+    real_grade = fake.grade
+    calls = []
+
+    async def slow(ctx, work, text):
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        return await real_grade(ctx, work, text)
+
+    monkeypatch.setattr(fake, "grade", slow)
+    r = await _submit(client, s, a)
+    sid = uuid.UUID(r.json()["submission"]["id"])
+    # Topshirishda bitta vazifa allaqachon ishga tushgan; yana ikkita jarayon (yoki qayta ishga tushish) xuddi shu ishni olishga urinadi
+    await asyncio.gather(grade_submission(sid), grade_submission(sid))
+    await jobs.drain()
+    assert len(calls) == 1
+
+
+async def test_orphaned_job_is_picked_up_after_lease_expires(client, monkeypatch):
+    """Server ish o'rtasida qayta ishga tushdi: ish "tekshirilmoqda"da qotib qolmasligi kerak."""
+    import uuid
+
+    from sqlalchemy import update
+
+    from app.db import session as db_session
+    from app.models import Submission
+    from app.services.assignments import resume_pending
+
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    fake = ai.get_provider()
+    real_grade = fake.grade
+    calls = []
+
+    async def counting(ctx, work, text):
+        calls.append(1)
+        return await real_grade(ctx, work, text)
+
+    monkeypatch.setattr(fake, "grade", counting)
+    # Topshirish paytidagi vazifa "o'lik jarayonda" qolgandek: fon vazifasini ishga tushirmaymiz
+    monkeypatch.setattr(jobs, "spawn", lambda *a, **k: None)
+    sid = uuid.UUID((await _submit(client, s, a)).json()["submission"]["id"])
+    monkeypatch.undo()
+    monkeypatch.setattr(fake, "grade", counting)
+
+    async def set_lease(delta):
+        async with db_session.get_sessionmaker()() as db:
+            await db.execute(update(Submission).where(Submission.id == sid)
+                             .values(ai_lease_until=datetime.now(UTC) + delta))
+            await db.commit()
+
+    # Ijara hali amalda (jarayon ishlayapti yoki qayta urinish vaqti kelmagan) — tegilmaydi
+    await set_lease(timedelta(minutes=5))
+    await resume_pending()
+    await jobs.drain()
+    assert calls == []
+
+    # Ijara tugadi (jarayon yiqilgan) — davriy tekshiruv ishni olib, baholaydi
+    await set_lease(timedelta(seconds=-1))
+    await resume_pending()
+    await resume_pending()  # ikki marta chaqirilsa ham bir marta bajariladi
+    await jobs.drain()
+    sub = (await client.get(f"/api/v1/student/assignments/{a['id']}", headers=s)).json()["submission"]
+    assert len(calls) == 1 and sub["status"] == "graded"
+
+
+async def test_retry_wait_is_not_cut_short_by_sweeper(client, monkeypatch):
+    from sqlalchemy import select
+
+    from app.db import session as db_session
+    from app.models import Submission
+    from app.services.assignments import resume_pending
+
+    t, g, (s,) = await _setup(client, 1)
+    a = await _published(client, t, g)
+    calls = []
+
+    async def limited(ctx, work, text):
+        calls.append(1)
+        raise ai.AiError("AI band", retryable=True)
+
+    monkeypatch.setattr(ai.get_provider(), "grade", limited)
+    monkeypatch.setattr(jobs, "spawn_later", lambda *a, **k: None)  # qayta urinish vaqti hali kelmagan
+    await _submit(client, s, a)
+    await jobs.drain()
+    assert len(calls) == 1
+    async with db_session.get_sessionmaker()() as db:
+        sub = (await db.execute(select(Submission))).scalars().one()
+        lease = sub.ai_lease_until if sub.ai_lease_until.tzinfo else sub.ai_lease_until.replace(tzinfo=UTC)
+        assert lease > datetime.now(UTC)  # kutish vaqti ijaraga yozildi
+    await resume_pending()
+    await jobs.drain()
+    assert len(calls) == 1  # davriy tekshiruv muddatidan oldin qayta urinmadi
+
+
+async def test_student_task_list_is_bounded_to_latest(client, monkeypatch):
+    from app.core.config import get_settings
+
+    t, g, (s,) = await _setup(client, 1)
+    ids = [(await _published(client, t, g, due_at=(datetime.now(UTC) + timedelta(days=d)).isoformat()))["id"]
+           for d in (1, 2, 3)]
+    monkeypatch.setattr(get_settings(), "student_tasks_limit", 2)
+    lst = (await client.get("/api/v1/student/assignments", headers=s)).json()
+    # Eng so'nggi ikkitasi, muddati bo'yicha o'sish tartibida
+    assert [a["id"] for a in lst] == ids[1:]
+
+
+async def test_ai_generated_assignment(client):
+    t, g, (s,) = await _setup(client, 1)
+    due = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+    form = {"group_id": g["id"], "title": "Kasrlarni qo'shish", "source_type": "ai", "due_at": due,
+            "ai_count": "20", "ai_difficulty": "medium", "instructions": "Aralash kasrlar ham bo'lsin"}
+    r = await client.post("/api/v1/assignments", headers=t, data=form)
+    assert r.status_code == 201, r.text
+    await jobs.drain()
+    a = (await client.get(f"/api/v1/assignments/{r.json()['id']}", headers=t)).json()
+    assert a["status"] == "review" and len(a["items"]) == 20
+    assert a["ai_params"] == {"topic": "Kasrlarni qo'shish", "count": 20, "difficulty": "medium"}
+    assert r"\frac" in a["items"][0]["text"] and a["items"][0]["answer"]
+
+    bad = await client.post("/api/v1/assignments", headers=t, data={**form, "ai_count": "0"})
+    assert bad.status_code == 422
+    bad = await client.post("/api/v1/assignments", headers=t, data={**form, "ai_count": "41"})
+    assert bad.status_code == 422 and bad.json()["error"]["code"] == "AI_COUNT_INVALID"
+
+
+async def test_dashboard_group_analytics(client):
+    t, g, (s1, s2) = await _setup(client, 2)
+    a = await _published(client, t, g)
+    await _submit(client, s1, a)
+    await _submit(client, s2, a, color=(200, 40, 40))
+    await jobs.drain()
+    d = (await client.get("/api/v1/teachers/me/dashboard", headers=t)).json()["analytics"]
+    grp = d["groups"][0]
+    assert grp["students"] == 2 and grp["checked"] == 2 and grp["avg_percent"] == 80.0
+    assert grp["hardest_assignment"]["avg_percent"] == 80.0 and len(grp["weekly"]) == 8
+    assert grp["weekly"][-1]["works"] == 2 and sum(d["distribution"].values()) == 2

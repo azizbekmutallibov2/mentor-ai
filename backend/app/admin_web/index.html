@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mentor AI Admin</title>
+<style>
+  :root {
+    --bg: #f8fafc; --surface: #ffffff; --surface-2: #f1f5f9; --border: #e2e8f0;
+    --text: #0f172a; --muted: #64748b; --primary: #4f46e5; --primary-soft: #eef2ff;
+    --success: #16a34a; --success-soft: #dcfce7; --warning: #b45309; --warning-soft: #fef3c7;
+    --danger: #dc2626; --danger-soft: #fee2e2; --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #020617; --surface: #0f172a; --surface-2: #1e293b; --border: #334155;
+      --text: #f8fafc; --muted: #94a3b8; --primary: #818cf8; --primary-soft: #1e1b4b;
+      --success: #4ade80; --success-soft: #14532d; --warning: #fbbf24; --warning-soft: #451a03;
+      --danger: #f87171; --danger-soft: #450a0a; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  .hidden { display: none !important; }
+  /* Kirish */
+  .login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  .login-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 28px; box-shadow: var(--shadow); }
+  .logo { width: 52px; height: 52px; border-radius: 16px; background: linear-gradient(135deg, var(--primary), #0ea5e9); display: grid; place-items: center; color: #fff; font-size: 26px; margin-bottom: 14px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 20px; margin: 0 0 16px; }
+  .muted { color: var(--muted); }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  input, select, textarea { width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  textarea { resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  .btn { border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 700; cursor: pointer; background: var(--primary); color: #fff; }
+  .btn.block { width: 100%; margin-top: 18px; padding: 12px; }
+  .btn.ghost { background: var(--surface-2); color: var(--text); }
+  .btn.success { background: var(--success); } .btn.danger { background: var(--danger); }
+  .btn.sm { padding: 6px 12px; font-size: 13px; border-radius: 10px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .error { color: var(--danger); font-size: 14px; margin-top: 10px; min-height: 20px; }
+  /* Tartib */
+  .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+  aside { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 14px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; margin: 0 8px 22px; }
+  .brand .logo { width: 36px; height: 36px; font-size: 18px; border-radius: 11px; margin: 0; }
+  nav button { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: none; padding: 10px 12px; border-radius: 12px; cursor: pointer; font-weight: 600; color: var(--muted); }
+  nav button.active { background: var(--primary-soft); color: var(--primary); }
+  nav .badge { margin-left: auto; }
+  main { padding: 26px; max-width: 1180px; width: 100%; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .stat .v { font-size: 26px; font-weight: 800; } .stat .l { color: var(--muted); font-size: 13px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 100px; font-size: 12px; font-weight: 700; background: var(--surface-2); color: var(--muted); }
+  .badge.success { background: var(--success-soft); color: var(--success); }
+  .badge.warning { background: var(--warning-soft); color: var(--warning); }
+  .badge.danger { background: var(--danger-soft); color: var(--danger); }
+  .badge.primary { background: var(--primary-soft); color: var(--primary); }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  .table-wrap { overflow-x: auto; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { border: 1px solid var(--border); background: var(--surface); padding: 7px 14px; border-radius: 100px; cursor: pointer; font-weight: 600; }
+  .tabs button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .empty { text-align: center; padding: 36px; color: var(--muted); }
+  /* Tushum grafigi: bitta qator ma'lumot — bitta rang, qiymat ustunning tepasida */
+  .chart { display: flex; align-items: flex-end; gap: 14px; height: 170px; padding-top: 22px; }
+  .bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 6px; }
+  .bar .fill { width: 100%; max-width: 46px; background: var(--primary); border-radius: 4px 4px 0 0; min-height: 3px; }
+  .bar .val { font-size: 12px; font-weight: 700; } .bar .m { font-size: 12px; color: var(--muted); }
+  .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 12px; font-weight: 600; box-shadow: var(--shadow); }
+  dialog { border: 1px solid var(--border); border-radius: 18px; background: var(--surface); color: var(--text); padding: 22px; width: min(420px, 92vw); }
+  dialog::backdrop { background: rgba(2,6,23,.5); }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+    nav { display: flex; overflow-x: auto; gap: 4px; } nav button { white-space: nowrap; width: auto; }
+    main { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<section id="login" class="login hidden">
+  <form class="login-card" id="loginForm">
+    <div class="logo">✦</div>
+    <h1>Mentor AI Admin</h1>
+    <div class="muted">Boshqaruv paneliga kirish</div>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">Parol</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button class="btn block" type="submit">Kirish</button>
+    <div class="error" id="loginError"></div>
+  </form>
+</section>
+
+<section id="app" class="app hidden">
+  <aside>
+    <div class="brand"><div class="logo">✦</div>Mentor AI</div>
+    <nav id="nav">
+      <button data-page="dashboard" class="active">📊 Boshqaruv</button>
+      <button data-page="requests">🧾 So'rovlar <span class="badge warning hidden" id="pendingBadge"></span></button>
+      <button data-page="teachers">👩‍🏫 O'qituvchilar</button>
+      <button data-page="plans">💎 Tariflar</button>
+      <button data-page="promo">🎟 Promo kodlar</button>
+      <button data-page="support">💬 Murojaatlar <span class="badge warning hidden" id="supportBadge"></span></button>
+      <button data-page="jetons">🪙 Jetonlar <span class="badge warning hidden" id="jetonBadge"></span></button>
+      <button data-page="site">🌐 Sayt</button>
+      <button data-page="team">👥 Jamoa</button>
+      <button id="logout">↩ Chiqish</button>
+    </nav>
+  </aside>
+  <main id="main"></main>
+</section>
+
+<dialog id="grantDialog">
+  <form method="dialog" id="grantForm">
+    <h2>Tarif berish</h2>
+    <div class="muted" id="grantWho"></div>
+    <label for="grantPlan">Tarif</label>
+    <select id="grantPlan"></select>
+    <label for="grantMonths">Necha oy</label>
+    <input id="grantMonths" type="number" min="1" max="24" value="1">
+    <div class="row" style="margin-top:18px;justify-content:flex-end">
+      <button class="btn ghost" value="cancel" type="submit">Bekor qilish</button>
+      <button class="btn" value="ok" type="submit">Berish</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const API = "/api/v1";
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const money = (n) => new Intl.NumberFormat("uz-UZ").format(n || 0) + " so'm";
+const date = (d) => d ? new Date(d).toLocaleDateString("uz-UZ", {day: "2-digit", month: "2-digit", year: "numeric"}) : "—";
+let token = sessionStorage.getItem("admin_token");
+let page = "dashboard";
+
+function toast(msg) {
+  const t = document.createElement("div"); t.className = "toast"; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2600);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: {"Content-Type": "application/json", ...(token ? {Authorization: "Bearer " + token} : {})},
+  });
+  if (res.status === 401 && path !== "/admin/login") { logout(); throw new Error("Sessiya tugadi"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || "Xatolik");
+  return data;
+}
+
+function logout() { token = null; sessionStorage.removeItem("admin_token"); show(); }
+
+function show() {
+  $("#login").classList.toggle("hidden", !!token);
+  $("#app").classList.toggle("hidden", !token);
+  if (token) render();
+}
+
+$("#loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); $("#loginError").textContent = "";
+  try {
+    const r = await api("/admin/login", {method: "POST", body: JSON.stringify({email: $("#email").value, password: $("#password").value})});
+    token = r.tokens.access_token; sessionStorage.setItem("admin_token", token); show();
+  } catch (err) { $("#loginError").textContent = err.message; }
+});
+$("#logout").addEventListener("click", logout);
+$("#nav").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-page]"); if (!b) return;
+  page = b.dataset.page;
+  document.querySelectorAll("#nav button[data-page]").forEach((x) => x.classList.toggle("active", x === b));
+  render();
+});
+
+const statusBadge = (s) => ({
+  trial: '<span class="badge primary">Sinov</span>', active: '<span class="badge success">Faol</span>',
+  expired: '<span class="badge danger">Tugagan</span>', pending: '<span class="badge warning">Kutilmoqda</span>',
+  approved: '<span class="badge success">Tasdiqlangan</span>', rejected: '<span class="badge danger">Rad etilgan</span>',
+}[s] || `<span class="badge">${esc(s)}</span>`);
+
+async function render() {
+  const main = $("#main");
+  main.innerHTML = '<div class="empty">Yuklanmoqda…</div>';
+  try {
+    const stats = await api("/admin/stats");
+    const setBadge = (id, n) => { const b = $(id); b.textContent = n; b.classList.toggle("hidden", !n); };
+    setBadge("#pendingBadge", stats.pending_requests);
+    setBadge("#supportBadge", stats.support_open);
+    setBadge("#jetonBadge", stats.jeton_orders_pending);
+    if (page === "dashboard") main.innerHTML = dashboard(stats);
+    if (page === "requests") await requests(main, "pending");
+    if (page === "teachers") await teachers(main, "");
+    if (page === "plans") await plansPage(main);
+    if (page === "promo") await promoPage(main);
+    if (page === "support") await supportPage(main, "open");
+    if (page === "jetons") await jetonsPage(main, "pending");
+    if (page === "site") await sitePage(main);
+    if (page === "team") await teamPage(main);
+  } catch (err) { main.innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+}
+
+function dashboard(s) {
+  const max = Math.max(1, ...s.revenue_by_month.map((m) => m.amount));
+  const bars = s.revenue_by_month.map((m) => `
+    <div class="bar" title="${esc(m.month)}: ${money(m.amount)}">
+      <div class="val">${m.amount ? Math.round(m.amount / 1000) + "k" : ""}</div>
+      <div class="fill" style="height:${Math.max(2, m.amount / max * 100)}%"></div>
+      <div class="m">${esc(m.month.slice(5))}</div>
+    </div>`).join("");
+  const stat = (v, l) => `<div class="card stat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  return `
+    <div class="topbar"><h2>Boshqaruv paneli</h2></div>
+    <div class="cards">
+      ${stat(money(s.revenue_month), "Shu oy tushum")}
+      ${stat(s.pending_requests, "Tasdiqlash kutilmoqda")}
+      ${stat(s.teachers, "O'qituvchilar")}
+      ${stat(s.students, "O'quvchilar")}
+    </div>
+    <div class="cards">
+      ${stat(s.subscriptions.active, "Pullik obunalar")}
+      ${stat(s.subscriptions.trial, "Sinovda")}
+      ${stat(s.subscriptions.expired, "Muddati tugagan")}
+      ${stat(s.groups, "Faol guruhlar")}
+    </div>
+    <div class="cards">
+      <div class="card" style="grid-column:1/-1">
+        <div class="row" style="justify-content:space-between"><strong>Tushum, oxirgi 6 oy</strong><span class="muted">Jami: ${money(s.revenue_total)}</span></div>
+        <div class="chart">${bars}</div>
+      </div>
+    </div>
+    <div class="cards">
+      ${stat(s.submissions_today, "Topshiriqlar (24 soat)")}
+      ${stat(s.ai_calls_today, "AI chaqiruvlar (24 soat)")}
+      ${stat(s.ai_errors_today, "AI xatolari (24 soat)")}
+      ${stat(new Intl.NumberFormat("uz-UZ").format(s.ai_tokens_today), "AI tokenlar (24 soat)")}
+    </div>`;
+}
+
+async function requests(main, status) {
+  const list = await api("/admin/requests?status=" + status);
+  const tabs = ["pending", "approved", "rejected", "all"].map((s) =>
+    `<button data-s="${s}" class="${s === status ? "active" : ""}">${{pending: "Kutilmoqda", approved: "Tasdiqlangan", rejected: "Rad etilgan", all: "Hammasi"}[s]}</button>`).join("");
+  const rows = list.map((r) => `
+    <tr>
+      <td><strong>${esc(r.teacher.name)}</strong><div class="muted">${esc(r.teacher.email || r.teacher.phone || "")}</div></td>
+      <td>${esc(r.plan.name)} · ${r.months} oy</td>
+      <td><strong>${money(r.amount_uzs)}</strong>${r.promo_code ? `<div class="muted">🎟 ${esc(r.promo_code)}: −${money(r.discount_uzs)}</div>` : ""}</td>
+      <td>${date(r.created_at)}</td>
+      <td>${statusBadge(r.status)}${r.teacher_note ? `<div class="muted">${esc(r.teacher_note)}</div>` : ""}</td>
+      <td>${r.status === "pending" ? `<div class="row">
+        <button class="btn sm success" data-act="approve" data-id="${r.id}">Tasdiqlash</button>
+        <button class="btn sm ghost" data-act="reject" data-id="${r.id}">Rad etish</button></div>` : date(r.decided_at)}</td>
+    </tr>`).join("");
+  main.innerHTML = `
+    <div class="topbar"><h2>Tarif so'rovlari</h2></div>
+    <div class="tabs">${tabs}</div>
+    <div class="card table-wrap">${list.length ? `<table><thead><tr><th>O'qituvchi</th><th>Tarif</th><th>Summa</th><th>Sana</th><th>Holat</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="empty">So\'rovlar yo\'q</div>'}</div>`;
+  main.querySelector(".tabs").onclick = (e) => { const s = e.target.dataset.s; if (s) requests(main, s); };
+  main.querySelectorAll("[data-act]").forEach((btn) => btn.onclick = async () => {
+    const approve = btn.dataset.act === "approve";
+    if (approve && !confirm("To'lov qabul qilindimi? Tarif darhol yoqiladi.")) return;
+    btn.disabled = true;
+    try {
+      await api(`/admin/requests/${btn.dataset.id}/${btn.dataset.act}`, {method: "POST", body: JSON.stringify({})});
+      toast(approve ? "Tasdiqlandi — tarif yoqildi" : "Rad etildi"); render();
+    } catch (err) { toast(err.message); btn.disabled = false; }
+  });
+}
+
+async function teachers(main, q) {
+  const [list, allPlans] = await Promise.all([api("/admin/teachers?q=" + encodeURIComponent(q)), api("/admin/plans")]);
+  const rows = list.map((t) => `
+    <tr>
+      <td><strong>${esc(t.name)}</strong><div class="muted">${esc(t.email || t.phone || "")}</div></td>
+      <td>${esc(t.plan.name)}<div>${statusBadge(t.status)} ${t.status !== "expired" ? `<span class="muted">${t.days_left} kun</span>` : ""}</div></td>
+      <td>${t.groups} guruh · ${t.students} o'quvchi</td>
+      <td>${date(t.created_at)}</td>
+      <td><div class="row">
+        <button class="btn sm" data-grant="${t.id}" data-name="${esc(t.name)}">Tarif berish</button>
+        <button class="btn sm ghost" data-block="${t.id}" data-on="${t.is_active}">${t.is_active ? "Bloklash" : "Blokdan chiqarish"}</button>
+      </div></td>
+    </tr>`).join("");
+  main.innerHTML = `
+    <div class="topbar"><h2>O'qituvchilar</h2><input id="q" placeholder="Ism, email yoki telefon" value="${esc(q)}" style="max-width:280px"></div>
+    <div class="card table-wrap">${list.length ? `<table><thead><tr><th>O'qituvchi</th><th>Tarif</th><th>Hajm</th><th>Ro'yxatdan o'tgan</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="empty">Topilmadi</div>'}</div>`;
+  let timer; $("#q").oninput = (e) => { clearTimeout(timer); timer = setTimeout(() => teachers(main, e.target.value), 350); };
+  main.querySelectorAll("[data-grant]").forEach((btn) => btn.onclick = () => {
+    $("#grantWho").textContent = btn.dataset.name + " — naqd to'lov yoki sovg'a (tushumga yozilmaydi)";
+    $("#grantPlan").innerHTML = allPlans.filter((p) => p.is_active).map((p) => `<option value="${esc(p.code)}">${esc(p.name)} — ${money(p.price_uzs)}/oy</option>`).join("");
+    const dlg = $("#grantDialog"); dlg.showModal();
+    dlg.onclose = async () => {
+      if (dlg.returnValue !== "ok") return;
+      try {
+        await api(`/admin/teachers/${btn.dataset.grant}/grant`, {method: "POST", body: JSON.stringify({plan_code: $("#grantPlan").value, months: +$("#grantMonths").value})});
+        toast("Tarif berildi"); teachers(main, q);
+      } catch (err) { toast(err.message); }
+    };
+  });
+  main.querySelectorAll("[data-block]").forEach((btn) => btn.onclick = async () => {
+    const block = btn.dataset.on === "true";
+    if (block && !confirm("O'qituvchi bloklansinmi? U ilovaga kira olmaydi.")) return;
+    await api(`/admin/teachers/${btn.dataset.block}/${block ? "block" : "unblock"}`, {method: "POST", body: "{}"});
+    toast(block ? "Bloklandi" : "Blokdan chiqarildi"); teachers(main, q);
+  });
+}
+
+async function plansPage(main) {
+  const list = await api("/admin/plans");
+  main.innerHTML = `
+    <div class="topbar"><h2>Tariflar</h2></div>
+    <div class="plan-grid">${list.map((p) => `
+      <form class="card" data-id="${p.id}">
+        <div class="row" style="justify-content:space-between"><strong>${esc(p.code)}</strong>${p.is_active ? statusBadge("active") : '<span class="badge">O\'chirilgan</span>'}</div>
+        <label>Nomi</label><input name="name" value="${esc(p.name)}">
+        <label>Narx (so'm / oy)</label><input name="price_uzs" type="number" min="0" value="${p.price_uzs}">
+        <div class="row"><div style="flex:1"><label>Guruhlar</label><input name="max_groups" type="number" min="1" value="${p.max_groups}"></div>
+        <div style="flex:1"><label>O'quvchilar</label><input name="max_students" type="number" min="1" value="${p.max_students}"></div></div>
+        <label><input name="is_active" type="checkbox" ${p.is_active ? "checked" : ""} style="width:auto;margin-right:6px">Faol</label>
+        <button class="btn block" type="submit">Saqlash</button>
+      </form>`).join("")}</div>
+    <p class="muted">Narx o'zgarishi yangi so'rovlarga ta'sir qiladi; allaqachon yuborilgan so'rovlar eski narxda qoladi.</p>`;
+  main.querySelectorAll("form[data-id]").forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault();
+    const d = new FormData(f);
+    try {
+      await api("/admin/plans/" + f.dataset.id, {method: "PATCH", body: JSON.stringify({
+        name: d.get("name"), price_uzs: +d.get("price_uzs"), max_groups: +d.get("max_groups"),
+        max_students: +d.get("max_students"), is_active: d.get("is_active") === "on"})});
+      toast("Saqlandi");
+    } catch (err) { toast(err.message); }
+  });
+}
+
+// ---------------------------------------------------------------- Promo kodlar
+const promoValue = (p) => p.kind === "percent" ? `${p.value}%` : money(p.value);
+
+function randomCode() {
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // adashtiradigan O/0, I/1 yo'q
+  let out = "MENTOR-";
+  for (let i = 0; i < 5; i++) out += abc[Math.floor(Math.random() * abc.length)];
+  return out;
+}
+
+async function promoPage(main) {
+  const [list, allPlans] = await Promise.all([api("/admin/promo-codes"), api("/admin/plans")]);
+  const paid = allPlans.filter((p) => p.code !== "trial");
+  const planName = Object.fromEntries(allPlans.map((p) => [p.code, p.name]));
+  const active = list.filter((p) => p.is_active && !p.expired);
+  const sum = (k) => list.reduce((a, p) => a + (p[k] || 0), 0);
+  const stat = (v, l) => `<div class="card stat"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  const state = (p) => !p.is_active ? '<span class="badge">O\'chirilgan</span>'
+    : p.expired ? '<span class="badge danger">Muddati o\'tgan</span>'
+    : (p.max_uses && p.uses >= p.max_uses) ? '<span class="badge warning">Limit tugagan</span>'
+    : statusBadge("active");
+  const rows = list.map((p) => `
+    <tr>
+      <td><div class="row"><strong style="font-family:ui-monospace,Consolas,monospace;letter-spacing:.03em">${esc(p.code)}</strong>
+        <button class="btn sm ghost" data-copy="${esc(p.code)}" title="Nusxalash">⧉</button></div>
+        ${p.note ? `<div class="muted">${esc(p.note)}</div>` : ""}</td>
+      <td><strong>−${promoValue(p)}</strong></td>
+      <td>${p.plan_code ? esc(planName[p.plan_code] || p.plan_code) : '<span class="muted">Barchasi</span>'}</td>
+      <td>${p.uses} / ${p.max_uses ?? "∞"}<div class="muted">${p.approved} tasdiqlangan</div></td>
+      <td>${p.valid_until ? date(p.valid_until) : '<span class="muted">Cheksiz</span>'}</td>
+      <td>${money(p.revenue_uzs)}<div class="muted">chegirma ${money(p.discount_uzs)}</div></td>
+      <td>${state(p)}</td>
+      <td><div class="row">
+        <button class="btn sm ghost" data-toggle="${p.id}" data-on="${p.is_active}">${p.is_active ? "O'chirish" : "Yoqish"}</button>
+        ${p.uses === 0 && p.approved === 0 ? `<button class="btn sm ghost" data-del="${p.id}" title="Butunlay o'chirish">🗑</button>` : ""}
+      </div></td>
+    </tr>`).join("");
+
+  main.innerHTML = `
+    <div class="topbar"><h2>Promo kodlar</h2></div>
+    <div class="cards">
+      ${stat(active.length, "Faol kodlar")}
+      ${stat(sum("uses"), "Ishlatilgan (kutilayotgan + tasdiqlangan)")}
+      ${stat(money(sum("discount_uzs")), "Berilgan chegirma")}
+      ${stat(money(sum("revenue_uzs")), "Promo kod bilan tushum")}
+    </div>
+    <form class="card" id="promoForm" style="margin-bottom:18px">
+      <strong>Yangi promo kod</strong>
+      <div class="plan-grid" style="margin-top:4px">
+        <div><label>Kod</label><div class="row" style="flex-wrap:nowrap">
+          <input name="code" required minlength="3" maxlength="32" placeholder="USTOZ20" style="text-transform:uppercase">
+          <button class="btn ghost" type="button" id="promoRandom" title="Tasodifiy kod">🎲</button></div></div>
+        <div><label>Chegirma turi</label><select name="kind">
+          <option value="percent">Foiz (%)</option><option value="amount">Summa (so'm)</option></select></div>
+        <div><label id="promoValueLabel">Chegirma, %</label><input name="value" type="number" min="1" max="100" required value="20"></div>
+        <div><label>Qaysi tarif uchun</label><select name="plan_code">
+          <option value="">Barcha tariflar</option>
+          ${paid.map((p) => `<option value="${esc(p.code)}">${esc(p.name)} — ${money(p.price_uzs)}/oy</option>`).join("")}</select></div>
+        <div><label>Nechta o'qituvchi ishlata oladi</label><input name="max_uses" type="number" min="1" placeholder="Bo'sh — cheksiz"></div>
+        <div><label>Amal qilish muddati (shu kun oxirigacha)</label><input name="valid_until" type="date"></div>
+      </div>
+      <label>Izoh (faqat adminlar ko'radi)</label><input name="note" maxlength="255" placeholder="Masalan: 12-maktab o'qituvchilari uchun">
+      <div class="row" style="justify-content:space-between;margin-top:14px">
+        <span class="muted" id="promoPreview"></span>
+        <button class="btn" type="submit">Yaratish</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Har bir o'qituvchi bitta kodni bir marta ishlatadi. Admin so'rovni rad etsa, kod qayta ishlatilishi mumkin.</div>
+    </form>
+    <div class="card table-wrap">${list.length ? `<table><thead><tr><th>Kod</th><th>Chegirma</th><th>Tarif</th><th>Ishlatilgan</th><th>Muddat</th><th>Tushum</th><th>Holat</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="empty">Hali promo kod yo\'q</div>'}</div>`;
+
+  const f = $("#promoForm");
+  const preview = () => {
+    const d = new FormData(f);
+    const plan = paid.find((p) => p.code === d.get("plan_code")) || paid[0];
+    const v = +d.get("value") || 0;
+    if (!plan || !v) { $("#promoPreview").textContent = ""; return; }
+    const off = d.get("kind") === "percent" ? Math.round(plan.price_uzs * Math.min(v, 100) / 100) : Math.min(v, plan.price_uzs);
+    $("#promoPreview").textContent = `Misol: ${plan.name}, 1 oy — ${money(plan.price_uzs)} → ${money(plan.price_uzs - off)}`;
+  };
+  f.kind.onchange = () => {
+    const pct = f.kind.value === "percent";
+    $("#promoValueLabel").textContent = pct ? "Chegirma, %" : "Chegirma, so'm";
+    f.value.max = pct ? 100 : 100000000;
+    f.value.value = pct ? 20 : 30000;
+    preview();
+  };
+  f.oninput = preview; preview();
+  $("#promoRandom").onclick = () => { f.code.value = randomCode(); };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const d = new FormData(f);
+    const body = {code: d.get("code").trim(), kind: d.get("kind"), value: +d.get("value"),
+      plan_code: d.get("plan_code") || null, max_uses: d.get("max_uses") ? +d.get("max_uses") : null,
+      valid_until: d.get("valid_until") || null, note: d.get("note").trim() || null};
+    try { const p = await api("/admin/promo-codes", {method: "POST", body: JSON.stringify(body)}); toast(`${p.code} yaratildi`); promoPage(main); }
+    catch (err) { toast(err.message); }
+  };
+  main.querySelectorAll("[data-copy]").forEach((b) => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast("Nusxalandi: " + b.dataset.copy); } catch { toast(b.dataset.copy); }
+  });
+  main.querySelectorAll("[data-toggle]").forEach((b) => b.onclick = async () => {
+    const on = b.dataset.on !== "true";
+    try { await api("/admin/promo-codes/" + b.dataset.toggle, {method: "PATCH", body: JSON.stringify({is_active: on})}); toast(on ? "Yoqildi" : "O'chirildi"); promoPage(main); }
+    catch (err) { toast(err.message); }
+  });
+  main.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Promo kod butunlay o'chirilsinmi?")) return;
+    try {
+      const res = await fetch(API + "/admin/promo-codes/" + b.dataset.del, {method: "DELETE", headers: {Authorization: "Bearer " + token}});
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error?.message || "Xatolik");
+      toast("O'chirildi"); promoPage(main);
+    } catch (err) { toast(err.message); }
+  });
+}
+
+// ---------------------------------------------------------------- Murojaatlar
+const KIND = {help: "❓ Yordam", suggestion: "💡 Taklif", bug: "🐞 Xato"};
+const ROLE = {teacher: "O'qituvchi", student: "O'quvchi", admin: "Admin"};
+
+async function supportPage(main, status) {
+  const list = await api("/admin/support?status=" + status);
+  const tabs = ["open", "answered", "closed", "all"].map((s) =>
+    `<button data-s="${s}" class="${s === status ? "active" : ""}">${{open: "Yangi", answered: "Javob berilgan", closed: "Yopilgan", all: "Hammasi"}[s]}</button>`).join("");
+  const items = list.map((m) => `
+    <div class="card" style="margin-bottom:12px">
+      <div class="row" style="justify-content:space-between">
+        <div><strong>${esc(m.user.full_name)}</strong> <span class="muted">· ${ROLE[m.user.role] || ""} · ${esc(m.user.email || m.user.phone || "")}</span></div>
+        <div class="row"><span class="badge">${KIND[m.kind] || esc(m.kind)}</span><span class="muted">${date(m.created_at)}</span></div>
+      </div>
+      <p style="white-space:pre-wrap;margin:10px 0">${esc(m.text)}</p>
+      ${m.admin_reply ? `<div class="muted" style="border-left:3px solid var(--primary);padding-left:10px;white-space:pre-wrap">Javob: ${esc(m.admin_reply)}</div>` : ""}
+      ${m.status !== "closed" ? `<form data-id="${m.id}" style="margin-top:10px">
+        <textarea name="reply" rows="2" placeholder="Javob yozing…" style="width:100%"></textarea>
+        <div class="row" style="justify-content:flex-end;margin-top:8px">
+          <button class="btn sm ghost" type="button" data-close="${m.id}">Yopish</button>
+          <button class="btn sm" type="submit">Javob yuborish</button>
+        </div></form>` : ""}
+    </div>`).join("");
+  main.innerHTML = `
+    <div class="topbar"><h2>Yordam va takliflar</h2></div>
+    <div class="tabs">${tabs}</div>
+    ${list.length ? items : '<div class="card"><div class="empty">Murojaatlar yo\'q</div></div>'}`;
+  main.querySelector(".tabs").onclick = (e) => { const s = e.target.dataset.s; if (s) supportPage(main, s); };
+  main.querySelectorAll("form[data-id]").forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault();
+    const reply = new FormData(f).get("reply").trim(); if (!reply) return;
+    try { await api(`/admin/support/${f.dataset.id}/reply`, {method: "POST", body: JSON.stringify({reply})}); toast("Javob yuborildi"); render(); }
+    catch (err) { toast(err.message); }
+  });
+  main.querySelectorAll("[data-close]").forEach((b) => b.onclick = async () => {
+    await api(`/admin/support/${b.dataset.close}/reply`, {method: "POST", body: JSON.stringify({close: true})});
+    toast("Yopildi"); render();
+  });
+}
+
+// ---------------------------------------------------------------- Jetonlar
+async function jetonsPage(main, status) {
+  const [orders, catalog] = await Promise.all([api("/admin/jeton-orders?status=" + status), api("/admin/jetons")]);
+  const names = Object.fromEntries(catalog.map((j) => [j.code, j.name]));
+  const tabs = ["pending", "approved", "rejected", "all"].map((s) =>
+    `<button data-s="${s}" class="${s === status ? "active" : ""}">${{pending: "Kutilmoqda", approved: "Tasdiqlangan", rejected: "Rad etilgan", all: "Hammasi"}[s]}</button>`).join("");
+  const rows = orders.map((o) => `
+    <tr>
+      <td><strong>${esc(o.teacher.full_name)}</strong><div class="muted">${esc(o.teacher.email || o.teacher.phone || "")}</div></td>
+      <td>${esc(names[o.jeton_code] || o.jeton_code)} × ${o.quantity}</td>
+      <td><strong>${money(o.amount_uzs)}</strong></td>
+      <td>${date(o.created_at)}</td>
+      <td>${statusBadge(o.status)}${o.teacher_note ? `<div class="muted">${esc(o.teacher_note)}</div>` : ""}</td>
+      <td>${o.status === "pending" ? `<div class="row">
+        <button class="btn sm success" data-act="approve" data-id="${o.id}">Tasdiqlash</button>
+        <button class="btn sm ghost" data-act="reject" data-id="${o.id}">Rad etish</button></div>` : date(o.decided_at)}</td>
+    </tr>`).join("");
+  main.innerHTML = `
+    <div class="topbar"><h2>Jeton buyurtmalari</h2></div>
+    <div class="tabs">${tabs}</div>
+    <div class="card table-wrap">${orders.length ? `<table><thead><tr><th>O'qituvchi</th><th>Jeton</th><th>Summa</th><th>Sana</th><th>Holat</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="empty">Buyurtmalar yo\'q</div>'}</div>
+    <div class="topbar" style="margin-top:22px"><h2>Jetonlar katalogi</h2></div>
+    <div class="plan-grid">${catalog.map((j) => `
+      <form class="card" data-code="${esc(j.code)}">
+        <div class="row" style="justify-content:space-between"><strong>${esc(j.code)}</strong>${j.is_active ? statusBadge("active") : '<span class="badge">O\'chirilgan</span>'}</div>
+        <label>Nomi</label><input name="name" value="${esc(j.name)}">
+        <label>Tavsif</label><input name="description" value="${esc(j.description)}">
+        <label>Narx (so'm / dona)</label><input name="price_uzs" type="number" min="0" value="${j.price_uzs}">
+        <label><input name="is_active" type="checkbox" ${j.is_active ? "checked" : ""} style="width:auto;margin-right:6px">Sotuvda</label>
+        <button class="btn block" type="submit">Saqlash</button>
+      </form>`).join("")}</div>`;
+  main.querySelector(".tabs").onclick = (e) => { const s = e.target.dataset.s; if (s) jetonsPage(main, s); };
+  main.querySelectorAll("[data-act]").forEach((btn) => btn.onclick = async () => {
+    const approve = btn.dataset.act === "approve";
+    if (approve && !confirm("To'lov qabul qilindimi? Jetonlar o'qituvchi hisobiga darhol tushadi.")) return;
+    btn.disabled = true;
+    try { await api(`/admin/jeton-orders/${btn.dataset.id}/${btn.dataset.act}`, {method: "POST", body: "{}"}); toast(approve ? "Tasdiqlandi" : "Rad etildi"); render(); }
+    catch (err) { toast(err.message); btn.disabled = false; }
+  });
+  main.querySelectorAll("form[data-code]").forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault();
+    const d = new FormData(f);
+    try {
+      await api("/admin/jetons/" + f.dataset.code, {method: "PATCH", body: JSON.stringify({
+        name: d.get("name"), description: d.get("description"), price_uzs: +d.get("price_uzs"), is_active: d.get("is_active") === "on"})});
+      toast("Saqlandi");
+    } catch (err) { toast(err.message); }
+  });
+}
+
+// ---------------------------------------------------------------- Jamoa (saytdagi asoschilar bo'limi)
+const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+
+async function teamPage(main) {
+  const list = await api("/admin/founders");
+  const card = (f, i) => `
+    <form class="card" data-id="${f.id}">
+      <div class="row" style="gap:14px;align-items:flex-start;flex-wrap:nowrap">
+        <div style="flex:none;width:96px;text-align:center">
+          ${f.photo_url
+            ? `<img src="${esc(f.photo_url)}" alt="" style="width:96px;height:96px;border-radius:50%;object-fit:cover;display:block">`
+            : `<div style="width:96px;height:96px;border-radius:50%;background:var(--primary-soft);color:var(--primary);display:grid;place-items:center;font-size:30px;font-weight:800">${esc(initials(f.name))}</div>`}
+          <label class="btn sm ghost" style="margin-top:8px;display:inline-block;cursor:pointer">📷 Rasm
+            <input type="file" accept="image/*" data-photo="${f.id}" style="display:none"></label>
+        </div>
+        <div style="flex:1;min-width:0">
+          <label>Ism familiya</label><input name="name" value="${esc(f.name)}" required minlength="2" maxlength="80">
+          <label>Roli</label><input name="role" value="${esc(f.role)}" required minlength="2" maxlength="80" placeholder="Masalan: Founder, Backend Engineer">
+          <label>Qisqa ma'lumot</label><textarea name="bio" rows="2" maxlength="400" style="width:100%">${esc(f.bio)}</textarea>
+          <div class="row" style="justify-content:space-between;margin-top:10px">
+            <div class="row">
+              <button class="btn sm ghost" type="button" data-move="up" data-id="${f.id}" ${i === 0 ? "disabled" : ""} title="Yuqoriga">↑</button>
+              <button class="btn sm ghost" type="button" data-move="down" data-id="${f.id}" ${i === list.length - 1 ? "disabled" : ""} title="Pastga">↓</button>
+              <button class="btn sm ghost" type="button" data-del="${f.id}">🗑 O'chirish</button>
+            </div>
+            <button class="btn sm" type="submit">Saqlash</button>
+          </div>
+        </div>
+      </div>
+    </form>`;
+
+  main.innerHTML = `
+    <div class="topbar"><h2>Jamoa</h2></div>
+    <p class="muted" style="margin-top:-8px">Taqdimot saytidagi “Jamoa” bo'limida shu tartibda chiqadi. Rasm avtomatik kvadrat qilib qirqiladi.</p>
+    <div class="plan-grid" style="grid-template-columns:repeat(auto-fit,minmax(360px,1fr))">${list.map(card).join("")}</div>
+    <form class="card" id="teamAdd" style="margin-top:14px">
+      <strong>Yangi a'zo</strong>
+      <div class="row" style="flex-wrap:wrap">
+        <div style="flex:1;min-width:200px"><label>Ism familiya</label><input name="name" required minlength="2" maxlength="80"></div>
+        <div style="flex:1;min-width:200px"><label>Roli</label><input name="role" required minlength="2" maxlength="80" placeholder="Backend Engineer"></div>
+      </div>
+      <label>Qisqa ma'lumot</label><textarea name="bio" rows="2" maxlength="400" style="width:100%"></textarea>
+      <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" type="submit">Qo'shish</button></div>
+    </form>`;
+
+  const body = (f) => { const d = new FormData(f); return {name: d.get("name").trim(), role: d.get("role").trim(), bio: d.get("bio").trim()}; };
+  $("#teamAdd").onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api("/admin/founders", {method: "POST", body: JSON.stringify(body(e.target))}); toast("Qo'shildi — endi rasm yuklang"); teamPage(main); }
+    catch (err) { toast(err.message); }
+  };
+  main.querySelectorAll("form[data-id]").forEach((f) => f.onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api("/admin/founders/" + f.dataset.id, {method: "PATCH", body: JSON.stringify(body(f))}); toast("Saqlandi"); }
+    catch (err) { toast(err.message); }
+  });
+  main.querySelectorAll("[data-move]").forEach((b) => b.onclick = async () => {
+    await api(`/admin/founders/${b.dataset.id}/move/${b.dataset.move}`, {method: "POST", body: "{}"}); teamPage(main);
+  });
+  main.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+    if (!confirm("Jamoa a'zosi saytdan olib tashlansinmi?")) return;
+    const res = await fetch(API + "/admin/founders/" + b.dataset.del, {method: "DELETE", headers: {Authorization: "Bearer " + token}});
+    if (res.ok) { toast("O'chirildi"); teamPage(main); } else toast("Xatolik");
+  });
+  main.querySelectorAll("[data-photo]").forEach((inp) => inp.onchange = async () => {
+    const file = inp.files[0]; if (!file) return;
+    const fd = new FormData(); fd.append("file", file);
+    toast("Yuklanmoqda…");
+    const res = await fetch(API + `/admin/founders/${inp.dataset.photo}/photo`, {method: "POST", headers: {Authorization: "Bearer " + token}, body: fd});
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) { toast("Rasm yangilandi"); teamPage(main); } else toast(data?.error?.message || "Rasm yuklanmadi");
+  });
+}
+
+// ---------------------------------------------------------------- Taqdimot sayti
+const ECON_FIELDS = [
+  ["usd_uzs", "1 USD = … so'm"], ["model", "AI model"],
+  ["price_in", "Kirish narxi ($/1 mln token)"], ["price_out", "Chiqish narxi ($/1 mln token)"],
+  ["price_in_2027", "2027: kirish ($/1 mln)"], ["price_out_2027", "2027: chiqish ($/1 mln)"],
+  ["grade_in_tokens", "Tekshiruv: kirish tokeni"], ["grade_out_tokens", "Tekshiruv: chiqish tokeni"],
+  ["prepare_in_tokens", "Vazifa tayyorlash: kirish"], ["prepare_out_tokens", "Vazifa tayyorlash: chiqish"],
+  ["assistant_in_tokens", "Yordamchi: kirish tokeni"], ["assistant_out_tokens", "Yordamchi: chiqish tokeni"],
+  ["assistant_calls_per_month", "Yordamchi chaqiruvlari / oy"], ["assignments_per_week", "Haftasiga vazifalar"],
+  ["submit_rate", "Topshirish ulushi (0-1)"], ["resubmit_rate", "Qayta topshirish (0-1)"],
+  ["overhead", "Qo'shimcha xarajat (0-1)"], ["server_usd_month", "Server, $/oy"],
+  ["paying_teachers", "To'lovchi o'qituvchilar"], ["payment_fee", "To'lov komissiyasi (0-1)"],
+];
+
+async function sitePage(main) {
+  const d = await api("/admin/site");
+  const e = d.economics, dl = d.downloads;
+  main.innerHTML = `
+    <div class="topbar"><h2>Taqdimot sayti</h2><a class="btn sm ghost" href="/" target="_blank">Saytni ochish ↗</a></div>
+    <div class="cards">
+      <form class="card" id="secretForm" style="grid-column:1/-1">
+        <strong>🔒 Maxfiy bo'lim paroli</strong>
+        <p class="muted">Saytdagi iqtisodiy hisob-kitoblar bo'limi shu parol bilan ochiladi. ${d.secret_enabled ? "Parol o'rnatilgan." : "<b>Parol hali o'rnatilmagan — bo'lim yopiq.</b>"}</p>
+        <div class="row"><input name="password" type="password" minlength="6" placeholder="Yangi parol (kamida 6 belgi)" style="max-width:320px"><button class="btn" type="submit">Saqlash</button></div>
+      </form>
+    </div>
+    <form class="card" id="econForm" style="margin-bottom:16px">
+      <strong>📊 Iqtisodiy kalkulyator parametrlari</strong>
+      <p class="muted">Saytning maxfiy bo'limidagi hisob-kitob shu qiymatlardan tuziladi. Tarif narxlari "Tariflar" bo'limidan olinadi.</p>
+      <div class="plan-grid">${ECON_FIELDS.map(([k, l]) => `<div><label>${l}</label><input name="${k}" value="${esc(e[k])}" ${k === "model" ? "" : 'type="number" step="any"'}></div>`).join("")}</div>
+      <label>Izoh (maxfiy bo'limda ko'rinadi)</label><textarea name="notes" rows="3" style="width:100%">${esc(e.notes)}</textarea>
+      <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" type="submit">Saqlash</button></div>
+    </form>
+    <form class="card" id="dlForm">
+      <strong>📱 APK yuklash</strong>
+      <p class="muted">Fayllar serverdagi <code>data/downloads</code> papkasiga qo'yiladi; bu yerda saytda ko'rinadigan ma'lumot.</p>
+      <div class="plan-grid">
+        <div><label>Versiya</label><input name="version" value="${esc(dl.version)}"></div>
+        <div><label>Asosiy APK havolasi</label><input name="arm64_url" value="${esc(dl.arm64_url)}"></div>
+        <div><label>Hajmi, MB</label><input name="arm64_size_mb" type="number" value="${esc(dl.arm64_size_mb)}"></div>
+        <div><label>Eski telefonlar APK</label><input name="legacy_url" value="${esc(dl.legacy_url)}"></div>
+        <div><label>Hajmi, MB</label><input name="legacy_size_mb" type="number" value="${esc(dl.legacy_size_mb)}"></div>
+        <div><label>Izoh</label><input name="note" value="${esc(dl.note)}"></div>
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn" type="submit">Saqlash</button></div>
+    </form>`;
+  $("#secretForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    try { await api("/admin/site/secret-password", {method: "PUT", body: JSON.stringify({password: new FormData(ev.target).get("password")})}); toast("Parol saqlandi"); sitePage(main); }
+    catch (err) { toast(err.message); }
+  };
+  $("#econForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(ev.target), body = {};
+    ECON_FIELDS.forEach(([k]) => { const v = f.get(k); body[k] = k === "model" ? v : Number(v); });
+    body.notes = f.get("notes");
+    try { await api("/admin/site/economics", {method: "PUT", body: JSON.stringify(body)}); toast("Saqlandi"); }
+    catch (err) { toast(err.message); }
+  };
+  $("#dlForm").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(ev.target);
+    const body = Object.fromEntries(f.entries());
+    body.arm64_size_mb = Number(body.arm64_size_mb); body.legacy_size_mb = Number(body.legacy_size_mb);
+    try { await api("/admin/site/downloads", {method: "PUT", body: JSON.stringify(body)}); toast("Saqlandi"); }
+    catch (err) { toast(err.message); }
+  };
+}
+
+show();
+</script>
+</body>
+</html>
